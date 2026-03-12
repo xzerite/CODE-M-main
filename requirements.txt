@@ -55,3 +55,7 @@ requests
 
 # واجهة تشغيل المودلات
 flask
+
+# مودل إشارة المرور الضوئية (YOLO)
+torch
+ultralytics

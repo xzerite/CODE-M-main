@@ -19,7 +19,7 @@ app = Flask(__name__)
 PROJECT_DIR = Path(__file__).resolve().parent
 
 # مودلات تعرض البث داخل المتصفح (بدل نافذة OpenCV)
-STREAMABLE_MODELS = ["color_detection.py", "traffic_sign_detection.py", "age_gender_detection.py"]
+STREAMABLE_MODELS = ["color_detection.py", "traffic_light_recognition.py", "age_gender_detection.py"]
 
 # بث المودل: آخر إطار + قفل + العملية الحالية
 _stream_frame = None
@@ -31,7 +31,7 @@ _stream_listener_socket = None
 MODELS = [
     ("كشف الألوان - Color Detection", "color_detection.py"),
     ("التعرف على الوجه - Face Recognition", "face_recognition.py"),
-    ("إشارات المرور - Traffic Sign", "traffic_sign_detection.py"),
+    ("إشارة المرور الضوئية - Traffic Light", "traffic_light_recognition.py"),
     ("العمر والجنس - Age & Gender", "age_gender_detection.py"),
     ("النص OCR - Text Recognition", "text_recognition_ocr.py"),
     ("المسافة للأجسام - Object Distance", "object_distance_calculator.py"),
