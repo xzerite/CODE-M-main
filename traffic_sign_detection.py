@@ -1,7 +1,8 @@
 import cv2
 import requests
 import os
-from config import CAMERA_URL
+import time
+from config import STREAM_URL
 
 # ======================================================================
 engine = None
@@ -16,7 +17,6 @@ except Exception:
     pass
 
 def AI_speak(label):
-    AI_speak.has_been_called = True
     if engine:
         try:
             engine.say(label)
@@ -25,129 +25,111 @@ def AI_speak(label):
             print(label)
     else:
         print(label)
+    return label
 
-AI_speak.has_been_called = False
-if engine:
-    try:
-        engine.say("traffic sign detection has been activated")
-        engine.runAndWait()
-    except Exception:
-        print("traffic sign detection has been activated")
-else:
-    print("traffic sign detection has been activated")
+# ======================================================================
 
-# ===========================================================================================
+# Function to safely load a classifier
+def load_cascade(filename):
+    if not os.path.exists(filename):
+        print(f"Warning: Model file '{filename}' not found. Skipping this detector.")
+        return None
+    cascade = cv2.CascadeClassifier(filename)
+    if cascade.empty():
+        print(f"Error: Could not load '{filename}'. It might be corrupted.")
+        return None
+    return cascade
 
-url = CAMERA_URL
-captured_files = []
+# Load Classifiers
+yieldsign = load_cascade('yieldsign12Stages.xml')
+Traffic_Light = load_cascade('TrafficLight_HAAR_16Stages.xml')
+stop_sign = load_cascade('cascade_stop_sign.xml')
+Speedlimit = load_cascade('Speedlimit_24_15Stages.xml')
 
-# Try capturing images (ideally 2 to clear buffer, but proceed with 1 if necessary)
-for i in range(2):
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            filename = f'trafficsign_detection_{i+1}.jpg'
-            with open(filename, 'wb') as file:
-                file.write(response.content)
-            captured_files.append(filename)
-            print(f"Picture {i+1} has been successfully captured.")
-        else:
-            print(f"Failed to take the picture {i+1}. Status code: {response.status_code}")
-    except Exception as e:
-        print(f"Error connecting to camera for picture {i+1}: {e}")
+# ======================================================================
 
-if not captured_files:
-    print("Error: Could not capture any images from camera.")
-    AI_speak("Error capturing images from camera.")
-    exit()
-
-# Use the last captured image for processing
-img_to_use = captured_files[-1]
-print(f"Using {img_to_use} for processing.")
-
-# Cleanup other captured files if any
-for f in captured_files:
-    if f != img_to_use and os.path.exists(f):
-        os.remove(f)
-        print(f"Cleaned up temporary file: {f}")
-
-# ===========================================================================================
-# Stop Sign Cascade Classifier xml
-yieldsign = cv2.CascadeClassifier('yieldsign12Stages.xml')
-Traffic_Light = cv2.CascadeClassifier('TrafficLight_HAAR_16Stages.xml')
-stop_sign = cv2.CascadeClassifier('cascade_stop_sign.xml')
-Speedlimit = cv2.CascadeClassifier('Speedlimit_24_15Stages.xml')
-
-img = cv2.imread(img_to_use)
-if img is None:
-    print(f"Error: Could not load image '{img_to_use}'.")
-    exit()
-
-# while cap.isOpened():
-#   _, img = cap.read()
-gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-yieldsign_scaled = yieldsign.detectMultiScale(gray, 1.3, 5)
-Traffic_Light_scaled = Traffic_Light.detectMultiScale(gray, 1.3, 5)
-stop_sign_scaled = stop_sign.detectMultiScale(gray, 1.3, 5)
-Speedlimit_scaled = Speedlimit.detectMultiScale(gray, 1.3, 5)
+def run_live_traffic_detection():
+    stream_url = STREAM_URL
+    snapshot_url = f"http://192.168.8.12/capture" 
     
-# Detect the stop sign, x,y = origin points, w = width, h = height
-for (x, y, w, h) in stop_sign_scaled:
-        # Draw rectangle around the stop sign
-    stop_sign_rectangle = cv2.rectangle(img, (x,y),(x+w, y+h), (0, 255, 0), 3)
-        # Write "Stop sign" on the bottom of the rectangle
-    stop_sign_text = cv2.putText(img=stop_sign_rectangle,
-                                     text=AI_speak("Stop Sign"),
-                                     org=(x, y+h+30),
-                                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                                     fontScale=1, color=(0, 0, 255),
-                                     thickness=2, lineType=cv2.LINE_4)
+    print(f"Connecting to stream: {stream_url}")
+    cap = cv2.VideoCapture(stream_url)
+    
+    # Set a shorter timeout for OpenCV
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000" 
 
-    # Detect the Yield Sign, x,y = origin points, w = width, h = height
-for (x, y, w, h) in yieldsign_scaled:
-        # Draw rectangle around the stop sign
-        yieldsign_rectangle = cv2.rectangle(img, (x,y),
-                                            (x+w, y+h),
-                                            (0, 255, 0), 3)
-        # Write "Yield Sign" on the bottom of the rectangle
-        yieldsign_text = cv2.putText(img=yieldsign_rectangle,
-                                     text=AI_speak("Yield Sign Stop"),
-                                     org=(x, y+h+30),
-                                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                                     fontScale=1, color=(0, 0, 255),
-                                     thickness=2, lineType=cv2.LINE_4)
-                                     
-for (x, y, w, h) in Traffic_Light_scaled:
-        # Draw rectangle around the stop sign
-        Traffic_Light_rectangle = cv2.rectangle(img, (x,y),
-                                            (x+w, y+h),
-                                            (0, 255, 0), 3)
-        # Write "Traffic Light Red Stop" on the bottom of the rectangle
-        Traffic_Light_text = cv2.putText(img=Traffic_Light_rectangle,
-                                     text=AI_speak("Traffic Light Red Stop"),
-                                     org=(x, y+h+30),
-                                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                                     fontScale=1, color=(0, 0, 255),
-                                     thickness=2, lineType=cv2.LINE_4)
-                                     
-    # Detect the Speedlimit, x,y = origin points, w = width, h = height
-for (x, y, w, h) in Speedlimit_scaled:
-        # Draw rectangle around the stop sign
-        Speedlimit_rectangle = cv2.rectangle(img, (x,y),
-                                            (x+w, y+h),
-                                            (0, 255, 0), 3)
-        # Write "Speedlimit" on the bottom of the rectangle
-        Speedlimit_text = cv2.putText(img=Speedlimit_rectangle,
-                                     text=AI_speak("Speedlimit Sign"),
-                                     org=(x, y+h+30),
-                                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                                     fontScale=1, color=(0, 0, 255),
-                                     thickness=2, lineType=cv2.LINE_4)
+    last_speak_time = 0
+    AI_speak("Live traffic sign detection started.")
 
-if(AI_speak.has_been_called):
-    pass
-else:
-    AI_speak("nothing detected, please try again ")
-# cv2.imshow("img", img)
-# cv2.destroyAllWindows()
+    while True:
+        ret, frame = cap.read()
+        
+        # Fallback to snapshots if stream fails
+        if not ret:
+            try:
+                resp = requests.get(snapshot_url, timeout=5)
+                if resp.status_code == 200:
+                    import numpy as np
+                    nparr = np.frombuffer(resp.content, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                else:
+                    time.sleep(1)
+                    continue
+            except Exception:
+                time.sleep(2)
+                cap.open(stream_url)
+                continue
 
+        if frame is None:
+            continue
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        detected_label = None
+
+        # 1. Stop Sign Detection
+        if stop_sign:
+            scales = stop_sign.detectMultiScale(gray, 1.3, 5)
+            for (x, y, w, h) in scales:
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 3)
+                cv2.putText(frame, "Stop Sign", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                detected_label = "Stop Sign"
+
+        # 2. Yield Sign Detection
+        if yieldsign:
+            scales = yieldsign.detectMultiScale(gray, 1.3, 5)
+            for (x, y, w, h) in scales:
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 3)
+                cv2.putText(frame, "Yield Sign", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                detected_label = "Yield Sign"
+
+        # 3. Traffic Light Detection
+        if Traffic_Light:
+            scales = Traffic_Light.detectMultiScale(gray, 1.3, 5)
+            for (x, y, w, h) in scales:
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 3)
+                cv2.putText(frame, "Traffic Light", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                detected_label = "Traffic Light Red Stop"
+
+        # 4. Speed Limit Detection
+        if Speedlimit:
+            scales = Speedlimit.detectMultiScale(gray, 1.3, 5)
+            for (x, y, w, h) in scales:
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 3)
+                cv2.putText(frame, "Speed Limit", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                detected_label = "Speed Limit Sign"
+
+        # Voice output (if something detected and 3 seconds passed)
+        if detected_label and (time.time() - last_speak_time > 3):
+            AI_speak(detected_label)
+            last_speak_time = time.time()
+
+        cv2.imshow('Live Traffic Sign Detection', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    run_live_traffic_detection()
