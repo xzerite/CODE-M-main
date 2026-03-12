@@ -1,10 +1,11 @@
-import argparse
 import cv2
 import math
-import sys
-import os
+import time
 import requests
-from config import CAMERA_URL
+import os
+import sys
+import numpy as np
+from config import STREAM_URL
 
 # ======================================================================
 engine = None
@@ -14,7 +15,7 @@ try:
     voices = engine.getProperty('voices')
     voice_index = 1 if len(voices) > 1 else 0
     engine.setProperty('voice', voices[voice_index].id)
-    engine.setProperty("rate", 140)
+    engine.setProperty("rate", 145)
 except Exception:
     pass
 
@@ -28,136 +29,112 @@ def AI_speak(something):
     else:
         print(something)
 
-AI_speak("age and gender detection has been activated")
+# ======================================================================
+
+def get_face_box(net, frame, conf_threshold=0.7):
+    frame_opencv_dnn = frame.copy()
+    frame_height = frame_opencv_dnn.shape[0]
+    frame_width = frame_opencv_dnn.shape[1]
+    blob = cv2.dnn.blobFromImage(frame_opencv_dnn, 1.0, (300, 300), [104, 117, 123], True, False)
+
+    net.setInput(blob)
+    detections = net.forward()
+    bboxes = []
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > conf_threshold:
+            x1 = int(detections[0, 0, i, 3] * frame_width)
+            y1 = int(detections[0, 0, i, 4] * frame_height)
+            x2 = int(detections[0, 0, i, 5] * frame_width)
+            y2 = int(detections[0, 0, i, 6] * frame_height)
+            bboxes.append([x1, y1, x2, y2])
+            cv2.rectangle(frame_opencv_dnn, (x1, y1), (x2, y2), (0, 255, 0), int(round(frame_height / 150)), 8)
+    return frame_opencv_dnn, bboxes
 
 # ======================================================================
 
-def highlightFace(net, frame, conf_threshold=0.7):
-  frameOpencvDnn=frame.copy()
-  frameHeight=frameOpencvDnn.shape[0]
-  frameWidth=frameOpencvDnn.shape[1]
-  blob=cv2.dnn.blobFromImage(frameOpencvDnn,1.0,(300,300),[104,117,123],
-                             True,False)
-  net.setInput(blob)
-  detections=net.forward()
-  faceBoxes=[]
-  for i in range(detections.shape[2]):
-    confidence=detections[0,0,i,2]
-    if confidence>conf_threshold:
-      x1 = int(detections[0, 0, i, 3] * frameWidth)
-      y1 = int(detections[0, 0, i, 4] * frameHeight)
-      x2 = int(detections[0, 0, i, 5] * frameWidth)
-      y2 = int(detections[0, 0, i, 6] * frameHeight)
-      faceBoxes.append([x1,y1,x2,y2])
-      cv2.rectangle(frameOpencvDnn, (x1,y1), (x2,y2), (0,255,0),
-                    int(round(frameHeight/150)),8)
-  return frameOpencvDnn,faceBoxes
+# مسار مجلد الأوزان
+script_dir = os.path.dirname(os.path.abspath(__file__))
+weights_dir = os.path.join(script_dir, "weights")
 
-parser= argparse.ArgumentParser()
-parser.add_argument('--image')
-
-args = parser.parse_args()
-
-# مسار مجلد الأوزان (بجانب السكربت)
-_weights_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weights")
-
-# Defined the model files
-FACE_PROTO = os.path.join(_weights_dir, "opencv_face_detector.pbtxt")
-FACE_MODEL = os.path.join(_weights_dir, "opencv_face_detector_uint8.pb")
-AGE_PROTO = os.path.join(_weights_dir, "age_deploy.prototxt")
-AGE_MODEL = os.path.join(_weights_dir, "age_net.caffemodel")
-GENDER_PROTO = os.path.join(_weights_dir, "gender_deploy.prototxt")
-GENDER_MODEL = os.path.join(_weights_dir, "gender_net.caffemodel")
+FACE_PROTO = os.path.join(weights_dir, "opencv_face_detector.pbtxt")
+FACE_MODEL = os.path.join(weights_dir, "opencv_face_detector_uint8.pb")
+AGE_PROTO = os.path.join(weights_dir, "age_deploy.prototxt")
+AGE_MODEL = os.path.join(weights_dir, "age_net.caffemodel")
+GENDER_PROTO = os.path.join(weights_dir, "gender_deploy.prototxt")
+GENDER_MODEL = os.path.join(weights_dir, "gender_net.caffemodel")
 
 MODEL_MEAN_VALUES = (78.4263377603, 87.7689143744, 114.895847746)
 AGE_LIST = ["(0-2)", "(4-6)", "(8-12)", "(15-20)", "(25-32)", "(38-43)", "(48-53)", "(60-100)"]
 GENDER_LIST = ["Male", "Female"]
 
-# Load network (يحتاج ملفات الأوزان في مجلد weights/)
-if not os.path.isfile(FACE_MODEL):
-    print("ضع ملفات الأوزان في مجلد weights/ (انظر INSTALL.md أو README)")
-    sys.exit(1)
-FACE_NET = cv2.dnn.readNet(FACE_MODEL, FACE_PROTO)
-AGE_NET = cv2.dnn.readNet(AGE_MODEL, AGE_PROTO)
-GENDER_NET = cv2.dnn.readNet(GENDER_MODEL, GENDER_PROTO)
+# Load models
+try:
+    if not os.path.exists(FACE_MODEL):
+        raise FileNotFoundError("Missing weight files in 'weights/' folder.")
+    
+    face_net = cv2.dnn.readNet(FACE_MODEL, FACE_PROTO)
+    age_net = cv2.dnn.readNet(AGE_MODEL, AGE_PROTO)
+    gender_net = cv2.dnn.readNet(GENDER_MODEL, GENDER_PROTO)
+except Exception as e:
+    print(f"Error: {e}")
+    print("Please ensure all model files are in the 'weights' folder.")
+    AI_speak("Model files are missing. Please check the weights folder.")
+    # Define dummy nets to avoid crash during window init if models missing
+    face_net = age_net = gender_net = None
 
+# ======================================================================
 
-# video= cv2.VideoCapture(0) # use default camera
-# box_padding = 20
-# hasFrame, frame= video.read()
-# if not hasFrame:
-#   print("Error: Could not read frame from camera")
-#   sys.exit(1)
+def run_live_age_gender():
+    stream_url = STREAM_URL
+    cap = cv2.VideoCapture(stream_url)
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000"
+    
+    AI_speak("Age and gender detection started.")
+    last_speak_time = 0
 
-# =====================================================================================
-url = CAMERA_URL
-captured_files = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            time.sleep(1)
+            cap.open(stream_url)
+            continue
 
-# Try capturing images (ideally 2 to clear buffer, but proceed with 1 if necessary)
-for i in range(2):
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            filename = f'age_gender_{i+1}.jpg'
-            with open(filename, 'wb') as file:
-                file.write(response.content)
-            captured_files.append(filename)
-            print(f"Picture {i+1} has been successfully captured.")
+        if face_net:
+            frame_face, bboxes = get_face_box(face_net, frame)
+            for bbox in bboxes:
+                face = frame[max(0, bbox[1]-20):min(bbox[3]+20, frame.shape[0]-1),
+                             max(0, bbox[0]-20):min(bbox[2]+20, frame.shape[1]-1)]
+
+                blob = cv2.dnn.blobFromImage(face, 1.0, (227, 227), MODEL_MEAN_VALUES, swapRB=False)
+                
+                # Gender
+                gender_net.setInput(blob)
+                gender_preds = gender_net.forward()
+                gender = GENDER_LIST[gender_preds[0].argmax()]
+                
+                # Age
+                age_net.setInput(blob)
+                age_preds = age_net.forward()
+                age = AGE_LIST[age_preds[0].argmax()]
+
+                label = f"{gender}, {age}"
+                cv2.putText(frame_face, label, (bbox[0], bbox[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
+                
+                if time.time() - last_speak_time > 5:
+                    AI_speak(f"Person detected. Looks like a {gender} aged {age}")
+                    last_speak_time = time.time()
+            
+            cv2.imshow("Age and Gender Detection", frame_face)
         else:
-            print(f"Failed to take the picture {i+1}. Status code: {response.status_code}")
-    except Exception as e:
-        print(f"Error connecting to camera for picture {i+1}: {e}")
+            cv2.putText(frame, "MODELS MISSING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.imshow("Age and Gender Detection", frame)
 
-if not captured_files:
-    print("Error: Could not capture any images from camera.")
-    AI_speak("Error capturing images from camera.")
-    sys.exit(1)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-# Use the last captured image for processing
-img_to_use = captured_files[-1]
-print(f"Using {img_to_use} for processing.")
+    cap.release()
+    cv2.destroyAllWindows()
 
-# Cleanup other captured files if any
-for f in captured_files:
-    if f != img_to_use and os.path.exists(f):
-        os.remove(f)
-        print(f"Cleaned up temporary file: {f}")
-
-#======================================================================================
-
-image_path = img_to_use
-box_padding = 20
-
-frame = cv2.imread(image_path)
-if frame is None:
-    print(f"Error: Could not read image from {image_path}")
-    sys.exit(1)
-
-resultImg,faceBoxes= highlightFace(FACE_NET,frame)
-if not faceBoxes:
-  print("No face detected")
-  AI_speak("No face detected")
-
-else:
-  for faceBox in faceBoxes:
-    face= frame[max(0, faceBox[1]-box_padding):
-                min(faceBox[3]+box_padding,frame.shape[0]-1),max(0,faceBox[0]-box_padding)
-               :min(faceBox[2]+box_padding,frame.shape[1]-1)]
-
-    blob = cv2.dnn.blobFromImage(face, 1.0, (227, 227), MODEL_MEAN_VALUES, swapRB=False)
-    GENDER_NET.setInput(blob)
-    gender_predictions = GENDER_NET.forward()
-    gender = GENDER_LIST[gender_predictions[0].argmax()]
-    print(f"Gender: {gender}")
-
-    AGE_NET.setInput(blob)
-    age_predictions = AGE_NET.forward()
-    age = AGE_LIST[age_predictions[0].argmax()]
-    print(f"Age:{age[1:-1]} years")
-
-
-    cv2.putText(resultImg, f'{gender}, {age}', (faceBox[0], faceBox[1] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
-    gender_age_str = f"Gender: {gender}, Age: {age[1:-1]} years"
-    AI_speak(gender_age_str)
-    # cv2.imshow('Detecting age and gender', resultImg)
+if __name__ == "__main__":
+    run_live_age_gender()
