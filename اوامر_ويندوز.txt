@@ -1,0 +1,25 @@
+========== أوامر ويندوز للنسخ ==========
+
+انسخ كل أمر في CMD أو PowerShell ثم Enter. نفّذها بالترتيب.
+
+
+--- 1) تثبيت CMake (إن لم يكن مثبتاً) ---
+winget install Kitware.CMake
+
+
+--- 2) تثبيت pipwin (للمساعدة في PyAudio إذا فشل pip) ---
+pip install pipwin
+
+
+--- 3) تثبيت PyAudio (جرّب هذا أولاً) ---
+pip install PyAudio
+
+(إذا فشل استخدم بدلاً منه:)
+pipwin install pyaudio
+
+
+--- 4) تثبيت كل مكتبات المشروع ---
+pip install -r requirements.txt
+
+
+========== انتهى ==========

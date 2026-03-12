@@ -1,0 +1,54 @@
+# ============================================
+# مكتبات المشروع المطلوبة - Required Libraries
+# ============================================
+#
+# تبعيات نظام (راجع INSTALL.md للتفاصيل):
+# System dependencies (see INSTALL.md for details):
+#
+#   macOS:   brew install portaudio cmake tesseract
+#   Windows: CMake + Visual Studio Build Tools (C++) ثم PyAudio (pip أو pipwin)
+#            ثم: pip install -r requirements.txt
+#   Then:   pip install -r requirements.txt
+# ============================================
+
+# معالجة الصور والرؤية الحاسوبية
+opencv-python
+numpy
+Pillow
+
+# التعرف على الوجه
+face_recognition
+
+# التعرف على النص (OCR)
+pytesseract
+
+# التعلم الآلي والذكاء الاصطناعي
+tensorflow
+keras
+
+# التحليل والرسوم
+pandas
+matplotlib
+seaborn
+
+# تحويل النص إلى كلام
+pyttsx3
+
+# التعرف على الصوت
+SpeechRecognition
+
+# تسجيل وتشغيل الصوت
+PyAudio
+sounddevice
+soundfile
+wavio
+pydub
+
+# إدخال بالمدة الزمنية
+inputimeout
+
+# التحكم بلوحة المفاتيح
+keyboard
+
+# طلبات الشبكة
+requests

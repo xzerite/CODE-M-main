@@ -1,0 +1,14 @@
+========== أوامر ماك للنسخ ==========
+
+انسخ كل أمر في Terminal ثم Enter. نفّذها بالترتيب.
+
+
+--- 1) تثبيت التبعيات (portaudio, cmake, tesseract) ---
+brew install portaudio cmake tesseract
+
+
+--- 2) تثبيت كل مكتبات المشروع ---
+pip install -r requirements.txt
+
+
+========== انتهى ==========
