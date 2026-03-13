@@ -216,6 +216,13 @@ HTML_TEMPLATE = """
                     <label for="ip">IP الكاميرا</label>
                     <input type="text" id="ip" name="ip" placeholder="مثال: 192.168.8.12" value="192.168.8.12">
                 </div>
+                <div class="field" id="streamOpts">
+                    <label for="streamPort">منفذ البث</label>
+                    <input type="text" id="streamPort" name="streamPort" placeholder="81" value="81" style="width: 5rem;">
+                    <label for="streamPath" style="margin-top: 0.5rem;">مسار البث</label>
+                    <input type="text" id="streamPath" name="streamPath" placeholder="stream" value="stream">
+                    <p class="sub" style="margin-top: 0.5rem; font-size: 0.8rem;">من Arduino: انسخ عنوان البث من الشاشة التسلسلية (مثلاً :81/stream أو :80/stream)</p>
+                </div>
                 <div class="field">
                     <label for="model">المودل</label>
                     <select id="model" name="model">
@@ -241,13 +248,16 @@ HTML_TEMPLATE = """
 
         const sourceStream = document.querySelector('input[name="source"][value="stream"]');
         const ipField = document.getElementById('ipField');
-        sourceStream.addEventListener('change', () => { ipField.style.display = 'block'; });
-        document.querySelector('input[name="source"][value="device"]').addEventListener('change', () => { ipField.style.display = 'none'; });
+        const streamOpts = document.getElementById('streamOpts');
+        sourceStream.addEventListener('change', () => { ipField.style.display = 'block'; streamOpts.style.display = 'block'; });
+        document.querySelector('input[name="source"][value="device"]').addEventListener('change', () => { ipField.style.display = 'none'; streamOpts.style.display = 'none'; });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const source = document.querySelector('input[name="source"]:checked').value;
+                const source = document.querySelector('input[name="source"]:checked').value;
             const ip = document.getElementById('ip').value.trim();
+            const streamPort = document.getElementById('streamPort').value.trim() || '81';
+            const streamPath = document.getElementById('streamPath').value.trim() || 'stream';
             const model = document.getElementById('model').value;
             if (source === 'stream' && !ip) {
                 showMsg('أدخل IP الكاميرا عند اختيار البث', true);
@@ -258,7 +268,7 @@ HTML_TEMPLATE = """
                 const r = await fetch('/run', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ip: ip || '192.168.8.12', model, source })
+                    body: JSON.stringify({ ip: ip || '192.168.8.12', model, source, streamPort, streamPath })
                 });
                 const data = await r.json();
                 if (data.ok) {
@@ -417,6 +427,9 @@ def run():
         env = os.environ.copy()
         env["CAMERA_IP"] = ip or "192.168.8.12"
         env["USE_DEVICE_CAMERA"] = "1" if use_device else "0"
+        if not use_device:
+            env["CAMERA_STREAM_PORT"] = (data.get("streamPort") or "").strip() or "81"
+            env["CAMERA_STREAM_PATH"] = (data.get("streamPath") or "").strip() or "stream"
 
         streamable = script in STREAMABLE_MODELS
         if streamable:
