@@ -45,7 +45,12 @@ def capture_from_device(num_frames=1, delay=0.3):
 # Verified that "/capture" is the correct path for this camera
 CAMERA_URL_PATH = "/capture" 
 
-# روابط جاهزة (لا تغيّر إلا لو الكاميرا تستخدم مسار مختلف)
+# منفذ ومسار البث المباشر (من الواجهة أو افتراضي)
+# كثير من ESP32-CAM تستخدم 81، وبعضها 80 أو مسار مثل / أو /mjpeg
+CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "81")
+CAMERA_STREAM_PATH = (os.environ.get("CAMERA_STREAM_PATH", "stream")).strip().lstrip("/") or "stream"
+
+# روابط جاهزة
 CAMERA_URL = f"http://{CAMERA_IP}{CAMERA_URL_PATH}"
 CAMERA_URL_240 = f"http://{CAMERA_IP}/240x240.jpg"
-STREAM_URL = f"http://{CAMERA_IP}:81/stream"
+STREAM_URL = f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/{CAMERA_STREAM_PATH}"
