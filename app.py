@@ -182,6 +182,9 @@ HTML_TEMPLATE = """
         .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
         .btn-stop { background: #e74c3c; margin-top: 0.5rem; }
         .btn-stop:hover { background: #c0392b; }
+        .btn-check { background: #3498db; font-size: 0.9rem; }
+        .btn-check:hover { background: #2980b9; }
+        .btn-check:disabled { opacity: 0.7; cursor: wait; }
     </style>
 </head>
 <body>
@@ -214,14 +217,29 @@ HTML_TEMPLATE = """
                 </div>
                 <div class="field" id="ipField">
                     <label for="ip">IP الكاميرا</label>
-                    <input type="text" id="ip" name="ip" placeholder="مثال: 192.168.8.12" value="192.168.8.12">
+                    <input type="text" id="ip" name="ip" placeholder="مثال: 192.168.1.3" value="192.168.1.3" autocomplete="off">
                 </div>
                 <div class="field" id="streamOpts">
                     <label for="streamPort">منفذ البث</label>
-                    <input type="text" id="streamPort" name="streamPort" placeholder="81" value="81" style="width: 5rem;">
-                    <label for="streamPath" style="margin-top: 0.5rem;">مسار البث</label>
-                    <input type="text" id="streamPath" name="streamPath" placeholder="stream" value="stream">
-                    <p class="sub" style="margin-top: 0.5rem; font-size: 0.8rem;">من Arduino: انسخ عنوان البث من الشاشة التسلسلية (مثلاً :81/stream أو :80/stream)</p>
+                    <input type="text" id="streamPort" name="streamPort" placeholder="8081" value="8081" style="width: 5rem;">
+                    <label for="streamPathSelect" style="margin-top: 0.5rem;">مسار البث (اختر من القائمة)</label>
+                    <select id="streamPathSelect" name="streamPath" style="max-width: 12rem;">
+                        <option value="">/ (فارغ)</option>
+                        <option value="video" selected>video</option>
+                        <option value="live.flv">live.flv</option>
+                        <option value="stream">stream</option>
+                        <option value="mjpeg">mjpeg</option>
+                        <option value="__other__">أخرى (أدخل أدناه)</option>
+                    </select>
+                    <input type="text" id="streamPathCustom" name="streamPathCustom" placeholder="مثلاً capture أو custom" style="max-width: 10rem; margin-top: 0.25rem; display: none;">
+                    <p class="sub" style="margin-top: 0.5rem; font-size: 0.8rem;">من تطبيق البث: انسخ عنوان LAN (مثلاً <code>192.168.1.3:80</code> أو <code>192.168.1.3:8081</code>) وضع الـ IP في الحقل أعلاه والمنفذ في «منفذ البث». تأكد أن خادم البث يعمل في التطبيق (ليس «RTSP Server Closed»—فعّل بث HTTP أو Live Push إن وُجد).</p>
+                    <p class="sub" style="margin-top: 0.25rem; font-size: 0.8rem;">من Arduino: انسخ عنوان البث من الشاشة التسلسلية (مثلاً :81/stream أو :80/stream)</p>
+                    <label class="sub" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.85rem;">
+                        <input type="checkbox" id="useMjpegHttp" name="useMjpegHttp" value="1">
+                        استخدام بث MJPEG عبر HTTP فقط (بديل عند فشل FFmpeg)
+                    </label>
+                    <button type="button" class="btn btn-check" id="btnCheckStream" style="margin-top: 0.5rem;">تحقق اتصال من البث</button>
+                    <button type="button" class="btn btn-check" id="btnTestAllPaths" style="margin-top: 0.35rem;">اختبار كل المسارات واختيار المتصل</button>
                 </div>
                 <div class="field">
                     <label for="model">المودل</label>
@@ -252,12 +270,22 @@ HTML_TEMPLATE = """
         sourceStream.addEventListener('change', () => { ipField.style.display = 'block'; streamOpts.style.display = 'block'; });
         document.querySelector('input[name="source"][value="device"]').addEventListener('change', () => { ipField.style.display = 'none'; streamOpts.style.display = 'none'; });
 
+        document.getElementById('streamPathSelect').addEventListener('change', function() {
+            document.getElementById('streamPathCustom').style.display = this.value === '__other__' ? 'block' : 'none';
+        });
+
+        function getStreamPath() {
+            const sel = document.getElementById('streamPathSelect');
+            if (sel.value === '__other__') return (document.getElementById('streamPathCustom').value || '').trim();
+            return (sel.value || '').trim();
+        }
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
                 const source = document.querySelector('input[name="source"]:checked').value;
             const ip = document.getElementById('ip').value.trim();
-            const streamPort = document.getElementById('streamPort').value.trim() || '81';
-            const streamPath = document.getElementById('streamPath').value.trim() || 'stream';
+            const streamPort = document.getElementById('streamPort').value.trim() || '8081';
+            const streamPath = getStreamPath();
             const model = document.getElementById('model').value;
             if (source === 'stream' && !ip) {
                 showMsg('أدخل IP الكاميرا عند اختيار البث', true);
@@ -268,7 +296,7 @@ HTML_TEMPLATE = """
                 const r = await fetch('/run', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ip: ip || '192.168.8.12', model, source, streamPort, streamPath })
+                    body: JSON.stringify({ ip, model, source, streamPort, streamPath, useMjpegHttp: document.getElementById('useMjpegHttp').checked })
                 });
                 const data = await r.json();
                 if (data.ok) {
@@ -295,6 +323,74 @@ HTML_TEMPLATE = """
                 document.getElementById('streamImg').src = '';
                 showMsg('تم إيقاف المودل.');
             } catch (e) { showMsg('خطأ في الإيقاف', true); }
+        });
+
+        document.getElementById('btnCheckStream').addEventListener('click', async () => {
+            const ip = document.getElementById('ip').value.trim();
+            const streamPort = document.getElementById('streamPort').value.trim() || '8081';
+            const streamPath = getStreamPath();
+            if (!ip) {
+                showMsg('أدخل IP الكاميرا أولاً', true);
+                return;
+            }
+            const btn = document.getElementById('btnCheckStream');
+            btn.disabled = true;
+            showMsg('جاري التحقق من الاتصال...', false);
+            try {
+                const r = await fetch('/check_stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, streamPort, streamPath })
+                });
+                const data = await r.json();
+                if (data.ok) {
+                    showMsg('اتصال ناجح بالبث: ' + (data.url || ''), false);
+                } else {
+                    showMsg(data.error || 'فشل الاتصال بالبث', true);
+                }
+            } catch (err) {
+                showMsg('خطأ: ' + err.message, true);
+            }
+            btn.disabled = false;
+        });
+
+        document.getElementById('btnTestAllPaths').addEventListener('click', async () => {
+            const ip = document.getElementById('ip').value.trim();
+            const streamPort = document.getElementById('streamPort').value.trim() || '8081';
+            if (!ip) {
+                showMsg('أدخل IP الكاميرا أولاً', true);
+                return;
+            }
+            const btn = document.getElementById('btnTestAllPaths');
+            btn.disabled = true;
+            showMsg('جاري اختبار كل المسارات...', false);
+            try {
+                const r = await fetch('/test_all_paths', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, streamPort })
+                });
+                const data = await r.json();
+                if (data.ok) {
+                    const path = data.path || '';
+                    const sel = document.getElementById('streamPathSelect');
+                    const custom = document.getElementById('streamPathCustom');
+                    if (path === '' || path === 'video' || path === 'live.flv' || path === 'stream' || path === 'mjpeg') {
+                        sel.value = path;
+                        custom.style.display = 'none';
+                    } else {
+                        sel.value = '__other__';
+                        custom.value = path;
+                        custom.style.display = 'block';
+                    }
+                    showMsg('تم اختيار المسار المتصل: ' + (path || '/') + ' — ' + (data.url || ''), false);
+                } else {
+                    showMsg(data.error || 'لم يتصل أي مسار', true);
+                }
+            } catch (err) {
+                showMsg('خطأ: ' + err.message, true);
+            }
+            btn.disabled = false;
         });
     </script>
 </body>
@@ -425,11 +521,13 @@ def run():
             return jsonify(ok=False, error=f"الملف غير موجود: {script}")
 
         env = os.environ.copy()
-        env["CAMERA_IP"] = ip or "192.168.8.12"
+        env["CAMERA_IP"] = ip
         env["USE_DEVICE_CAMERA"] = "1" if use_device else "0"
         if not use_device:
-            env["CAMERA_STREAM_PORT"] = (data.get("streamPort") or "").strip() or "81"
-            env["CAMERA_STREAM_PATH"] = (data.get("streamPath") or "").strip() or "stream"
+            env["CAMERA_STREAM_PORT"] = (data.get("streamPort") or "").strip() or "8081"
+            env["CAMERA_STREAM_PATH"] = (data.get("streamPath") or "").strip()
+            if data.get("useMjpegHttp"):
+                env["USE_MJPEG_HTTP"] = "1"
 
         streamable = script in STREAMABLE_MODELS
         if streamable:
@@ -458,6 +556,101 @@ def run():
         )
 
         return jsonify(ok=True, streamable=streamable)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e))
+
+
+def _check_stream_connection(ip, port, path):
+    """تجربة فتح بث الكاميرا بالـ IP والمنفذ والمسار المعطاة. يُرجع (success, url_or_error)."""
+    import cv2
+    port = (port or "8081").strip() or "8081"
+    path = (path or "").strip().strip("/")
+    base = f"http://{ip}:{port}/"
+    stream_url = base + (path if path else "")
+    alternatives = [
+        base,
+        f"http://{ip}:{port}/video",
+        f"http://{ip}:{port}/live.flv",
+        f"http://{ip}:{port}/stream",
+        f"http://{ip}:{port}/mjpeg",
+        f"http://{ip}:80/",
+        f"http://{ip}:80/video",
+        f"http://{ip}:80/live.flv",
+        f"http://{ip}:80/stream",
+        f"http://{ip}:80/mjpeg",
+        "http://{}/".format(ip),
+        "http://{}/video".format(ip),
+        "http://{}/live.flv".format(ip),
+        "http://{}/stream".format(ip),
+    ]
+    urls = [stream_url] + [u for u in alternatives if u != stream_url]
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;10000000"
+    for url in urls:
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            try:
+                cap.release()
+            except Exception:
+                pass
+            if ret:
+                return True, url
+    return False, "لم يفتح أي رابط بث. جرّب المنفذ 80 إذا كان المتصفح يفتح بدون منفذ. إن استمر الفشل فقد يكون البث بصيغة لا يدعمها البرنامج (مثل HLS)—ابحث في تطبيق الكاميرا عن خيار بث MJPEG."
+
+
+def _test_all_paths(ip, port):
+    """تجربة مسارات البث بالترتيب (فارغ، video، live.flv، stream، mjpeg) على المنفذ المعطى فقط. يُرجع (success, path, url)."""
+    import cv2
+    port = (port or "8081").strip() or "8081"
+    paths_to_try = ["", "video", "live.flv", "stream", "mjpeg"]
+    # نجرّب المنفذ المدخل فقط (لا نجرّب 80 تلقائياً لتجنب Connection refused)
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;10000000"
+    for path in paths_to_try:
+        base = f"http://{ip}:{port}/"
+        url = base + (path.strip("/") if path else "")
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            try:
+                cap.release()
+            except Exception:
+                pass
+            if ret:
+                return True, path if path else "", url
+    return False, "", ""
+
+
+@app.route("/test_all_paths", methods=["POST"])
+def test_all_paths():
+    """اختبار كل المسارات وإرجاع أول مسار متصل."""
+    try:
+        data = request.get_json() or {}
+        ip = (data.get("ip") or "").strip()
+        if not ip:
+            return jsonify(ok=False, error="IP الكاميرا مطلوب")
+        port = (data.get("streamPort") or "").strip() or "8081"
+        ok, path, url = _test_all_paths(ip, port)
+        if ok:
+            return jsonify(ok=True, path=path, url=url)
+        return jsonify(ok=False, error="لم يتصل أي مسار. تأكد من تشغيل خادم البث.")
+    except Exception as e:
+        return jsonify(ok=False, error=str(e))
+
+
+@app.route("/check_stream", methods=["POST"])
+def check_stream():
+    """التحقق من إمكانية الاتصال ببث الكاميرا حسب IP ومنفذ ومسار من الطلب."""
+    try:
+        data = request.get_json() or {}
+        ip = (data.get("ip") or "").strip()
+        if not ip:
+            return jsonify(ok=False, error="IP الكاميرا مطلوب")
+        port = (data.get("streamPort") or "").strip() or "8081"
+        path = (data.get("streamPath") or "").strip()
+        ok, result = _check_stream_connection(ip, port, path)
+        if ok:
+            return jsonify(ok=True, url=result)
+        return jsonify(ok=False, error=result)
     except Exception as e:
         return jsonify(ok=False, error=str(e))
 

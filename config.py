@@ -45,12 +45,136 @@ def capture_from_device(num_frames=1, delay=0.3):
 # Verified that "/capture" is the correct path for this camera
 CAMERA_URL_PATH = "/capture" 
 
-# منفذ ومسار البث المباشر (من الواجهة أو افتراضي)
-# كثير من ESP32-CAM تستخدم 81، وبعضها 80 أو مسار مثل / أو /mjpeg
-CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "81")
-CAMERA_STREAM_PATH = (os.environ.get("CAMERA_STREAM_PATH", "stream")).strip().lstrip("/") or "stream"
+# منفذ ومسار البث (من الواجهة). فارغ = البث على الرابط الرئيسي /
+CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "8081")
+_path = (os.environ.get("CAMERA_STREAM_PATH") or "").strip().strip("/")
 
 # روابط جاهزة
 CAMERA_URL = f"http://{CAMERA_IP}{CAMERA_URL_PATH}"
 CAMERA_URL_240 = f"http://{CAMERA_IP}/240x240.jpg"
-STREAM_URL = f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/{CAMERA_STREAM_PATH}"
+# رابط البث: إذا المسار فارغ -> http://IP:80/ وإلا -> http://IP:80/stream
+STREAM_URL = f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/" + (_path if _path else "")
+# روابط بديلة للمحاولة لو الرابط الرئيسي فشل
+STREAM_URL_ALTERNATIVES = [
+    f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/",
+    f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/video",
+    f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/live.flv",
+    f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/stream",
+    f"http://{CAMERA_IP}:{CAMERA_STREAM_PORT}/mjpeg",
+    f"http://{CAMERA_IP}:80/",
+    f"http://{CAMERA_IP}:80/video",
+    f"http://{CAMERA_IP}:80/live.flv",
+    f"http://{CAMERA_IP}:80/stream",
+    f"http://{CAMERA_IP}:80/mjpeg",
+    f"http://{CAMERA_IP}/",
+    f"http://{CAMERA_IP}/video",
+    f"http://{CAMERA_IP}/live.flv",
+    f"http://{CAMERA_IP}/stream",
+]
+
+
+# ========== حل بديل: بث MJPEG عبر HTTP (بدون FFmpeg) ==========
+class MJPEGHTTPCapture:
+    """قارئ بث MJPEG عبر HTTP — يعمل عندما يفشل OpenCV/FFmpeg. واجهة مشابهة لـ VideoCapture."""
+
+    def __init__(self, url, timeout=10):
+        import threading
+        import requests
+        self._url = url
+        self._timeout = timeout
+        self._latest = None
+        self._lock = threading.Lock()
+        self._closed = False
+        self._thread = threading.Thread(target=self._stream_loop, daemon=True)
+        self._thread.start()
+        # انتظار أول إطار للتأكد أن البث يعمل
+        for _ in range(50):
+            if self._closed:
+                break
+            with self._lock:
+                if self._latest is not None:
+                    break
+            import time
+            time.sleep(0.1)
+
+    def _stream_loop(self):
+        import requests
+        import cv2
+        import numpy as np
+        try:
+            r = requests.get(self._url, stream=True, timeout=self._timeout)
+            r.raise_for_status()
+            buf = b""
+            for chunk in r.iter_content(chunk_size=8192):
+                if self._closed:
+                    break
+                buf += chunk
+                a, b = buf.find(b"\xff\xd8"), buf.find(b"\xff\xd9")
+                if a != -1 and b != -1 and b > a:
+                    jpg = buf[a : b + 2]
+                    buf = buf[b + 2 :]
+                    frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        with self._lock:
+                            self._latest = frame
+        except Exception:
+            pass
+        self._closed = True
+
+    def isOpened(self):
+        return not self._closed
+
+    def read(self):
+        import copy
+        with self._lock:
+            if self._latest is not None:
+                return True, self._latest.copy()
+        return False, None
+
+    def release(self):
+        self._closed = True
+
+
+def _try_mjpeg_http(url, timeout=8):
+    """تجربة فتح بث MJPEG عبر HTTP (بدون FFmpeg). يُرجع MJPEGHTTPCapture أو None."""
+    try:
+        cap = MJPEGHTTPCapture(url, timeout=timeout)
+        if cap.read()[0]:
+            return cap
+        cap.release()
+    except Exception:
+        pass
+    return None
+
+
+def open_stream_capture():
+    """فتح بث الكاميرا: أولاً OpenCV/FFmpeg، ثم إن فشل نجرّب قارئ MJPEG عبر HTTP. أو MJPEG فقط إن USE_MJPEG_HTTP=1."""
+    import cv2
+    use_mjpeg_only = os.environ.get("USE_MJPEG_HTTP", "").strip() == "1"
+    urls = [STREAM_URL] + [u for u in STREAM_URL_ALTERNATIVES if u != STREAM_URL]
+    if use_mjpeg_only:
+        for url in urls:
+            cap = _try_mjpeg_http(url)
+            if cap is not None:
+                print("Stream OK (MJPEG HTTP):", url)
+                return cap
+        return None
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;10000000"
+    for url in urls:
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                print("Stream OK (FFmpeg):", url)
+                return cap
+        try:
+            cap.release()
+        except Exception:
+            pass
+    for url in urls:
+        cap = _try_mjpeg_http(url)
+        if cap is not None:
+            print("Stream OK (MJPEG HTTP):", url)
+            return cap
+    cap = cv2.VideoCapture(STREAM_URL, cv2.CAP_FFMPEG)
+    return cap if cap.isOpened() else None

@@ -26,7 +26,7 @@ except Exception:
 
 from ultralytics import YOLO
 
-from config import USE_DEVICE_CAMERA, STREAM_URL
+from config import USE_DEVICE_CAMERA, STREAM_URL, open_stream_capture
 
 # --- Audio Setup (قفل لمنع تداخل الأصوات) ---
 engine = None
@@ -104,9 +104,16 @@ def main_system(source=0):
             print(f"Stream to browser failed: {e}")
             stream_sock = None
 
-    cap = cv2.VideoCapture(source)
     if isinstance(source, str):
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000"
+        print("Connecting to camera stream...")
+        cap = open_stream_capture()
+        if cap is None:
+            cap = cv2.VideoCapture(source)
+    else:
+        cap = cv2.VideoCapture(source)
+    if not cap.isOpened():
+        print("Could not open camera. Check IP and stream.")
+        return
     last_voice_time = 0
     current_status = ""
 
