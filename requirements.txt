@@ -65,3 +65,13 @@ deepface
 
 # قراءة النص (OCR - EasyOCR)
 easyocr
+
+# تقدير العمق + وصف الصور (Depth-Anything-V2, BLIP-2)
+transformers
+accelerate
+
+# تمييز الوجوه (InsightFace)
+insightface
+onnxruntime
+
+# كشف العملات (YOLOv11 - يستخدم ultralytics أعلاه)
