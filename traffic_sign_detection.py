@@ -2,8 +2,10 @@ import cv2
 import requests
 import os
 import time
+import struct
+import socket
 import numpy as np
-from config import STREAM_URL
+from config import STREAM_URL, CAMERA_IP, USE_DEVICE_CAMERA
 
 # ======================================================================
 engine = None
@@ -58,23 +60,40 @@ print("----------------------")
 # ======================================================================
 
 def run_live_traffic_detection():
-    stream_url = STREAM_URL
-    snapshot_url = f"http://192.168.8.12/capture" 
-    
-    print(f"Connecting to stream: {stream_url}")
-    cap = cv2.VideoCapture(stream_url)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000) # 5 sec timeout
-    
+    stream_sock = None
+    stream_to_browser = os.environ.get("STREAM_TO_BROWSER") == "1"
+    stream_port = os.environ.get("STREAM_PORT")
+    if stream_to_browser and stream_port:
+        try:
+            stream_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            stream_sock.connect(("127.0.0.1", int(stream_port)))
+        except Exception as e:
+            print(f"Stream to browser failed: {e}")
+            stream_sock = None
+
+    if USE_DEVICE_CAMERA:
+        print("Using device camera (0)")
+        cap = cv2.VideoCapture(0)
+        snapshot_url = None
+    else:
+        stream_url = STREAM_URL
+        snapshot_url = f"http://{CAMERA_IP}/capture"
+        print(f"Connecting to stream: {stream_url}")
+        cap = cv2.VideoCapture(stream_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+
     last_speak_time = 0
     AI_speak("Live traffic sign detection started.")
 
     while True:
         ret, frame = cap.read()
-        
+
+        if not ret and USE_DEVICE_CAMERA:
+            time.sleep(0.1)
+            continue
         # Fallback to snapshots if stream fails or times out
-        if not ret:
+        if not ret and snapshot_url:
             try:
-                # Try to take a snapshot photo instead of MJPEG stream
                 resp = requests.get(snapshot_url, timeout=3)
                 if resp.status_code == 200:
                     nparr = np.frombuffer(resp.content, np.uint8)
@@ -89,7 +108,7 @@ def run_live_traffic_detection():
                 print("Stream timed out. Retrying...")
                 time.sleep(1)
                 cap.release()
-                cap = cv2.VideoCapture(stream_url)
+                cap = cv2.VideoCapture(STREAM_URL)
                 continue
 
         if frame is None:
@@ -135,11 +154,22 @@ def run_live_traffic_detection():
             AI_speak(detected_label)
             last_speak_time = time.time()
 
-        cv2.imshow('Traffic Detection (Press Q to quit)', frame)
+        if stream_sock:
+            try:
+                _, jpeg = cv2.imencode(".jpg", frame)
+                stream_sock.sendall(struct.pack(">I", len(jpeg)) + jpeg.tobytes())
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                break
+        else:
+            cv2.imshow("Traffic Detection (Press Q to quit)", frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
+    if stream_sock:
+        try:
+            stream_sock.close()
+        except Exception:
+            pass
     cap.release()
     cv2.destroyAllWindows()
 

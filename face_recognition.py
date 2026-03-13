@@ -2,7 +2,7 @@ import cv2
 import face_recognition
 import glob
 import os
-from config import CAMERA_URL
+from config import CAMERA_URL, USE_DEVICE_CAMERA, capture_from_device
 import matplotlib.pyplot as plt
 import shutil
 import pyaudio
@@ -39,22 +39,26 @@ directory = "unknowen"
 parent_dir = os.path.dirname(os.path.abspath(__file__))
 path = os.path.join(parent_dir, directory)
 os.makedirs(path, exist_ok=True)
-url = CAMERA_URL
 captured_files = []
-for i in range(3):
-    try:
-        # التقاط صورة من ESP32
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            filename = os.path.join(path, f"image{i}.jpg")
-            with open(filename, 'wb') as file:
-                file.write(response.content)
-            captured_files.append(filename)
-            print(f"تم التقاط الصورة رقم {i+1} بنجاح!")
-        else:
-            print(f"فشل في التقاط الصورة رقم {i+1}. الحالة: {response.status_code}")
-    except Exception as e:
-        print(f"خطأ في الاتصال بالكاميرا للصورة {i+1}: {e}")
+if USE_DEVICE_CAMERA:
+    captured_files = capture_from_device(3, 0.4)
+    for i, f in enumerate(captured_files):
+        print(f"تم التقاط الصورة رقم {i+1} بنجاح (كاميرا الجهاز)!")
+else:
+    url = CAMERA_URL
+    for i in range(3):
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                filename = os.path.join(path, f"image{i}.jpg")
+                with open(filename, 'wb') as file:
+                    file.write(response.content)
+                captured_files.append(filename)
+                print(f"تم التقاط الصورة رقم {i+1} بنجاح!")
+            else:
+                print(f"فشل في التقاط الصورة رقم {i+1}. الحالة: {response.status_code}")
+        except Exception as e:
+            print(f"خطأ في الاتصال بالكاميرا للصورة {i+1}: {e}")
 
 if not captured_files:
     AI_speak("Error: Could not capture any images from camera.")

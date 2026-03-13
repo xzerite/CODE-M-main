@@ -52,3 +52,26 @@ keyboard
 
 # طلبات الشبكة
 requests
+
+# واجهة تشغيل المودلات
+flask
+
+# مودل إشارة المرور الضوئية (YOLO)
+torch
+ultralytics
+
+# تحليل الوجه (عمر، جنس، انفعال)
+deepface
+
+# قراءة النص (OCR - EasyOCR)
+easyocr
+
+# تقدير العمق + وصف الصور (Depth-Anything-V2, BLIP-2)
+transformers
+accelerate
+
+# تمييز الوجوه (InsightFace)
+insightface
+onnxruntime
+
+# كشف العملات (YOLOv11 - يستخدم ultralytics أعلاه)

@@ -2,7 +2,9 @@ import cv2
 import requests
 import os
 import time
-from config import STREAM_URL
+import struct
+import socket
+from config import STREAM_URL, CAMERA_IP, USE_DEVICE_CAMERA
 
 # ======================================================================
 engine = None
@@ -70,24 +72,38 @@ def get_color_name(hsv_pixel):
 # ======================================================================
 
 def run_live_detection():
-    # Use the snapshot URL if the stream port 81 is unstable
-    # Or keep using stream if you prefer, but we'll add better handling
-    stream_url = STREAM_URL
-    snapshot_url = f"http://192.168.8.12/capture" 
-    
-    print(f"Connecting to stream: {stream_url}")
-    cap = cv2.VideoCapture(stream_url)
-    
-    # Set a shorter timeout for OpenCV
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000" # 5 seconds in microseconds
+    stream_sock = None
+    stream_to_browser = os.environ.get("STREAM_TO_BROWSER") == "1"
+    stream_port = os.environ.get("STREAM_PORT")
+    if stream_to_browser and stream_port:
+        try:
+            stream_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            stream_sock.connect(("127.0.0.1", int(stream_port)))
+        except Exception as e:
+            print(f"Stream to browser failed: {e}")
+            stream_sock = None
+
+    if USE_DEVICE_CAMERA:
+        print("Using device camera (0)")
+        cap = cv2.VideoCapture(0)
+        snapshot_url = None
+    else:
+        stream_url = STREAM_URL
+        snapshot_url = f"http://{CAMERA_IP}/capture"
+        print(f"Connecting to stream: {stream_url}")
+        cap = cv2.VideoCapture(stream_url)
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000"
 
     last_speak_time = 0
-    
+
     while True:
         ret, frame = cap.read()
-        
+
+        if not ret and USE_DEVICE_CAMERA:
+            time.sleep(0.1)
+            continue
         # If stream fails, try to reconnect or use snapshots
-        if not ret:
+        if not ret and snapshot_url:
             print("Stream interrupted. Falling back to snapshot mode...")
             try:
                 resp = requests.get(snapshot_url, timeout=5)
@@ -101,7 +117,7 @@ def run_live_detection():
             except Exception as e:
                 print(f"Connection error: {e}")
                 time.sleep(2)
-                cap.open(stream_url) # Try to reopen stream
+                cap.open(STREAM_URL)
                 continue
 
         if frame is None:
@@ -127,13 +143,24 @@ def run_live_detection():
         b, g, r = int(pixel_center_bgr[0]), int(pixel_center_bgr[1]), int(pixel_center_bgr[2])
         
         cv2.putText(frame, current_color, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (b, g, r), 3)
-        cv2.circle(frame, (cx, cy), 15, (255, 255, 255), 2) 
-        cv2.imshow('Live Color Detection', frame)
+        cv2.circle(frame, (cx, cy), 15, (255, 255, 255), 2)
 
-        # Press 'q' to quit
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        if stream_sock:
+            try:
+                _, jpeg = cv2.imencode(".jpg", frame)
+                stream_sock.sendall(struct.pack(">I", len(jpeg)) + jpeg.tobytes())
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                break
+        else:
+            cv2.imshow("Live Color Detection", frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
+    if stream_sock:
+        try:
+            stream_sock.close()
+        except Exception:
+            pass
     cap.release()
     cv2.destroyAllWindows()
 
