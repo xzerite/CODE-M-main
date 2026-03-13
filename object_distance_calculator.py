@@ -67,34 +67,47 @@ for f in captured_files:
 
 # ======================================================================
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+yolov3_weights = os.path.join(script_dir, 'yolov3.weights')
+yolov3_cfg = os.path.join(script_dir, 'yolov3.cfg')
+coco_names = os.path.join(script_dir, 'coco.names.txt')
+if not os.path.isfile(coco_names):
+    coco_names = os.path.join(script_dir, 'coco.names')
+
+if not os.path.isfile(yolov3_weights) or not os.path.isfile(yolov3_cfg):
+    print("Error: YOLOv3 files missing. Put yolov3.weights and yolov3.cfg in the project folder.")
+    AI_speak("Object distance model files are missing. Add yolov3 weights and config.")
+    exit()
+if not os.path.isfile(coco_names):
+    print("Error: coco.names or coco.names.txt not found in project folder.")
+    AI_speak("Class names file is missing.")
+    exit()
+
 # Load the YOLOv3 configuration and weights files
-model = cv2.dnn.readNet('yolov3.weights', 'yolov3.cfg')
+model = cv2.dnn.readNet(yolov3_weights, yolov3_cfg)
 
 # Get the names of the output layers
 layer_names = model.getLayerNames()
-
-# Get the unconnected output layers
 unconnected_layers = model.getUnconnectedOutLayers()
-
-# Convert the unconnected layers to a list of tuples
 unconnected_layers = [(layer,) for layer in unconnected_layers]
-
-# Get the names of the unconnected output layers
 names = [layer_names[i[0] - 1] for i in unconnected_layers]
 
 # Set the real-world width of the object in meters
 object_width = 0.2
-
 # Set the focal length of the camera in pixels
 focal_length = 615
 
 # Load the list of class names
-with open('coco.names.txt', 'r') as f:
+with open(coco_names, 'r') as f:
     classes = [line.strip() for line in f.readlines()]
 
 # Read the image from a file
 image_path = img_to_use
 frame = cv2.imread(image_path)
+if frame is None:
+    print(f"Error: Could not read image from {image_path}")
+    AI_speak("Could not load the captured image.")
+    exit()
 
 # Resize the frame to (416, 416)
 resized_frame = cv2.resize(frame, (416, 416))

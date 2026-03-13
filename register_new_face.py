@@ -36,11 +36,14 @@ path_of_name = os.path.join(_script_dir, "registerd")
 os.makedirs(path_of_name, exist_ok=True)
 
 dirnames = [0]
-for folder in os.listdir(path_of_name): 
-    folder = int(folder)
-    dirnames.append(folder)
- 
-new_name=max(dirnames)
+for folder in os.listdir(path_of_name):
+    try:
+        n = int(folder)
+        dirnames.append(n)
+    except ValueError:
+        continue
+
+new_name = max(dirnames)
 new_name=int(new_name)+1
 new_name=str(new_name)
  

@@ -81,15 +81,30 @@ for f in captured_files:
         print(f"Cleaned up temporary file: {f}")
                 
 
-# ====================================================================== 
-       
+# ======================================================================
 
-# Get the image directory path
-folder_dir = "images"
-images = [image for image in os.listdir(folder_dir)]
+script_dir = os.path.dirname(os.path.abspath(__file__))
+folder_dir = os.path.join(script_dir, "images")
+captions_path = os.path.join(script_dir, 'captions.txt')
+weights_path = os.path.join(script_dir, "image_caption_generator.h5")
+
+if not os.path.isdir(folder_dir):
+    print("Error: 'images' folder not found. Create it and add training images, or check path.")
+    AI_speak("Image caption model needs an images folder.")
+    exit()
+if not os.path.isfile(captions_path):
+    print("Error: captions.txt not found in project folder.")
+    AI_speak("Captions file is missing.")
+    exit()
+
+images = [image for image in os.listdir(folder_dir) if image.lower().endswith(('.jpg', '.jpeg', '.png'))]
+if not images:
+    print("Error: No image files in 'images' folder.")
+    AI_speak("No images in folder.")
+    exit()
 
 # Load captions from file
-with open('captions.txt', 'r') as file:
+with open(captions_path, 'r') as file:
     captions = file.read().split('\n')
 
 # Load pre-trained ResNet50 model
@@ -208,7 +223,11 @@ final_model = Model(inputs=[img_model.input, captions_model.input], outputs=outp
 final_model.compile(loss='categorical_crossentropy', optimizer='RMSprop', metrics='accuracy')
 
 # Load the trained model
-final_model.load_weights("image_caption_generator.h5")
+if not os.path.isfile(weights_path):
+    print("Error: image_caption_generator.h5 not found in project folder.")
+    AI_speak("Caption model weights file is missing.")
+    exit()
+final_model.load_weights(weights_path)
 
 # Inverse dictionary for mapping indices back to words
 inverse_dict = {val: key for key, val in count_words.items()}

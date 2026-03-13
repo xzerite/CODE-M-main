@@ -90,12 +90,16 @@ if not os.path.exists(model_path):
     exit()
 
 model = tf.keras.models.load_model(model_path)
-files = gb.glob(pathname= os.path.join(path, '*.jpg'))
+files = gb.glob(pathname=os.path.join(path, '*.jpg'))
 print(f'For Prediction data , found {len(files)}')
+
+if not files:
+    print("Error: No captured images found in predection folder.")
+    AI_speak("No images to analyze.")
+    exit()
 
 s = 400
 X_pred = []
-files = gb.glob(pathname= str(predpath + 'predection/*.jpg'))
 for file in files: 
     image = cv2.imread(file)
     image_array = cv2.resize(image , (s,s))
