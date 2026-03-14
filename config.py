@@ -46,7 +46,7 @@ def capture_from_device(num_frames=1, delay=0.3):
 CAMERA_URL_PATH = "/capture" 
 
 # منفذ ومسار البث (من الواجهة). فارغ = البث على الرابط الرئيسي /
-CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "8081")
+CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "80")
 _path = (os.environ.get("CAMERA_STREAM_PATH") or "").strip().strip("/")
 
 # روابط جاهزة
@@ -87,8 +87,8 @@ class MJPEGHTTPCapture:
         self._closed = False
         self._thread = threading.Thread(target=self._stream_loop, daemon=True)
         self._thread.start()
-        # انتظار أول إطار للتأكد أن البث يعمل
-        for _ in range(50):
+        # انتظار أول إطار (حتى ~12 ثانية — ESP32 قد يكون بطيئاً)
+        for _ in range(120):
             if self._closed:
                 break
             with self._lock:
@@ -102,21 +102,25 @@ class MJPEGHTTPCapture:
         import cv2
         import numpy as np
         try:
-            r = requests.get(self._url, stream=True, timeout=self._timeout)
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0", "Accept": "multipart/x-mixed-replace, */*"}
+            r = requests.get(self._url, stream=True, timeout=max(self._timeout, 15), headers=headers)
             r.raise_for_status()
             buf = b""
-            for chunk in r.iter_content(chunk_size=8192):
+            for chunk in r.iter_content(chunk_size=16384):
                 if self._closed:
                     break
                 buf += chunk
-                a, b = buf.find(b"\xff\xd8"), buf.find(b"\xff\xd9")
-                if a != -1 and b != -1 and b > a:
-                    jpg = buf[a : b + 2]
-                    buf = buf[b + 2 :]
-                    frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if frame is not None:
-                        with self._lock:
-                            self._latest = frame
+                # ESP32 قد يرسل رؤوس multipart قبل كل إطار — نبحث عن بداية JPEG
+                a = buf.find(b"\xff\xd8")
+                if a != -1:
+                    b = buf.find(b"\xff\xd9", a)
+                    if b != -1 and b > a:
+                        jpg = buf[a : b + 2]
+                        buf = buf[b + 2 :]
+                        frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        if frame is not None:
+                            with self._lock:
+                                self._latest = frame
         except Exception:
             pass
         self._closed = True
@@ -133,6 +137,83 @@ class MJPEGHTTPCapture:
 
     def release(self):
         self._closed = True
+
+
+# ========== طريقة بديلة: بث من صور متتالية (استعلام /capture) ==========
+class SnapshotPollCapture:
+    """بث من صور متتالية: طلب متكرر لرابط التقاط صورة واحدة (مثل /capture في ESP32-CAM). واجهة مشابهة لـ VideoCapture."""
+
+    def __init__(self, url, interval=0.25):
+        import threading
+        import requests
+        import time
+        import cv2
+        import numpy as np
+        self._url = url.rstrip("/")
+        if "/capture" not in self._url:
+            self._url = self._url.rstrip("/") + "/capture"
+        self._interval = interval
+        self._latest = None
+        self._lock = threading.Lock()
+        self._closed = False
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread.start()
+        for _ in range(40):
+            if self._closed:
+                break
+            with self._lock:
+                if self._latest is not None:
+                    break
+            time.sleep(0.1)
+
+    def _poll_loop(self):
+        import requests
+        import time
+        import cv2
+        import numpy as np
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0"}
+        while not self._closed:
+            try:
+                r = requests.get(self._url, timeout=5, headers=headers)
+                r.raise_for_status()
+                arr = np.frombuffer(r.content, dtype=np.uint8)
+                frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame is not None:
+                    with self._lock:
+                        self._latest = frame
+            except Exception:
+                pass
+            time.sleep(self._interval)
+
+    def isOpened(self):
+        return not self._closed
+
+    def read(self):
+        with self._lock:
+            if self._latest is not None:
+                return True, self._latest.copy()
+        return False, None
+
+    def release(self):
+        self._closed = True
+
+
+def _try_snapshot_poll(base_url):
+    """تجربة البث عبر استعلام متكرر لـ /capture. يُرجع SnapshotPollCapture أو None."""
+    try:
+        base = base_url.rstrip("/")
+        for suf in ("/stream", "/video", "/mjpeg", "/live.flv"):
+            if base.endswith(suf):
+                base = base[: -len(suf)]
+                break
+        capture_url = base.rstrip("/") + "/capture"
+        cap = SnapshotPollCapture(capture_url, interval=0.2)
+        if cap.read()[0]:
+            return cap
+        cap.release()
+    except Exception:
+        pass
+    return None
 
 
 def _try_mjpeg_http(url, timeout=8):
@@ -158,6 +239,11 @@ def open_stream_capture():
             if cap is not None:
                 print("Stream OK (MJPEG HTTP):", url)
                 return cap
+        for url in urls:
+            cap = _try_snapshot_poll(url)
+            if cap is not None:
+                print("Stream OK (Snapshot /capture):", url)
+                return cap
         return None
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;10000000"
     for url in urls:
@@ -175,6 +261,11 @@ def open_stream_capture():
         cap = _try_mjpeg_http(url)
         if cap is not None:
             print("Stream OK (MJPEG HTTP):", url)
+            return cap
+    for url in urls:
+        cap = _try_snapshot_poll(url)
+        if cap is not None:
+            print("Stream OK (Snapshot /capture):", url)
             return cap
     cap = cv2.VideoCapture(STREAM_URL, cv2.CAP_FFMPEG)
     return cap if cap.isOpened() else None
