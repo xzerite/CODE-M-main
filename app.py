@@ -217,15 +217,15 @@ HTML_TEMPLATE = """
                 </div>
                 <div class="field" id="ipField">
                     <label for="ip">IP الكاميرا</label>
-                    <input type="text" id="ip" name="ip" placeholder="مثال: 192.168.1.3" value="192.168.1.3" autocomplete="off">
+                    <input type="text" id="ip" name="ip" placeholder="مثال: 192.168.8.12" value="192.168.8.12" autocomplete="off">
                 </div>
                 <div class="field" id="streamOpts">
                     <label for="streamPort">منفذ البث</label>
-                    <input type="text" id="streamPort" name="streamPort" placeholder="8081" value="8081" style="width: 5rem;">
+                    <input type="text" id="streamPort" name="streamPort" placeholder="80" value="80" style="width: 5rem;">
                     <label for="streamPathSelect" style="margin-top: 0.5rem;">مسار البث (اختر من القائمة)</label>
                     <select id="streamPathSelect" name="streamPath" style="max-width: 12rem;">
-                        <option value="">/ (فارغ)</option>
-                        <option value="video" selected>video</option>
+                        <option value="" selected>/ (فارغ)</option>
+                        <option value="video">video</option>
                         <option value="live.flv">live.flv</option>
                         <option value="stream">stream</option>
                         <option value="mjpeg">mjpeg</option>
@@ -284,7 +284,7 @@ HTML_TEMPLATE = """
             e.preventDefault();
                 const source = document.querySelector('input[name="source"]:checked').value;
             const ip = document.getElementById('ip').value.trim();
-            const streamPort = document.getElementById('streamPort').value.trim() || '8081';
+            const streamPort = document.getElementById('streamPort').value.trim() || '80';
             const streamPath = getStreamPath();
             const model = document.getElementById('model').value;
             if (source === 'stream' && !ip) {
@@ -327,7 +327,7 @@ HTML_TEMPLATE = """
 
         document.getElementById('btnCheckStream').addEventListener('click', async () => {
             const ip = document.getElementById('ip').value.trim();
-            const streamPort = document.getElementById('streamPort').value.trim() || '8081';
+            const streamPort = document.getElementById('streamPort').value.trim() || '80';
             const streamPath = getStreamPath();
             if (!ip) {
                 showMsg('أدخل IP الكاميرا أولاً', true);
@@ -356,7 +356,7 @@ HTML_TEMPLATE = """
 
         document.getElementById('btnTestAllPaths').addEventListener('click', async () => {
             const ip = document.getElementById('ip').value.trim();
-            const streamPort = document.getElementById('streamPort').value.trim() || '8081';
+            const streamPort = document.getElementById('streamPort').value.trim() || '80';
             if (!ip) {
                 showMsg('أدخل IP الكاميرا أولاً', true);
                 return;
@@ -524,7 +524,7 @@ def run():
         env["CAMERA_IP"] = ip
         env["USE_DEVICE_CAMERA"] = "1" if use_device else "0"
         if not use_device:
-            env["CAMERA_STREAM_PORT"] = (data.get("streamPort") or "").strip() or "8081"
+            env["CAMERA_STREAM_PORT"] = (data.get("streamPort") or "").strip() or "80"
             env["CAMERA_STREAM_PATH"] = (data.get("streamPath") or "").strip()
             if data.get("useMjpegHttp"):
                 env["USE_MJPEG_HTTP"] = "1"
@@ -563,7 +563,7 @@ def run():
 def _check_stream_connection(ip, port, path):
     """تجربة فتح بث الكاميرا بالـ IP والمنفذ والمسار المعطاة. يُرجع (success, url_or_error)."""
     import cv2
-    port = (port or "8081").strip() or "8081"
+    port = (port or "80").strip() or "80"
     path = (path or "").strip().strip("/")
     base = f"http://{ip}:{port}/"
     stream_url = base + (path if path else "")
@@ -601,7 +601,7 @@ def _check_stream_connection(ip, port, path):
 def _test_all_paths(ip, port):
     """تجربة مسارات البث بالترتيب (فارغ، video، live.flv، stream، mjpeg) على المنفذ المعطى فقط. يُرجع (success, path, url)."""
     import cv2
-    port = (port or "8081").strip() or "8081"
+    port = (port or "80").strip() or "80"
     paths_to_try = ["", "video", "live.flv", "stream", "mjpeg"]
     # نجرّب المنفذ المدخل فقط (لا نجرّب 80 تلقائياً لتجنب Connection refused)
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;10000000"
@@ -628,7 +628,7 @@ def test_all_paths():
         ip = (data.get("ip") or "").strip()
         if not ip:
             return jsonify(ok=False, error="IP الكاميرا مطلوب")
-        port = (data.get("streamPort") or "").strip() or "8081"
+        port = (data.get("streamPort") or "").strip() or "80"
         ok, path, url = _test_all_paths(ip, port)
         if ok:
             return jsonify(ok=True, path=path, url=url)
@@ -645,7 +645,7 @@ def check_stream():
         ip = (data.get("ip") or "").strip()
         if not ip:
             return jsonify(ok=False, error="IP الكاميرا مطلوب")
-        port = (data.get("streamPort") or "").strip() or "8081"
+        port = (data.get("streamPort") or "").strip() or "80"
         path = (data.get("streamPath") or "").strip()
         ok, result = _check_stream_connection(ip, port, path)
         if ok:

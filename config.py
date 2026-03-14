@@ -46,7 +46,7 @@ def capture_from_device(num_frames=1, delay=0.3):
 CAMERA_URL_PATH = "/capture" 
 
 # منفذ ومسار البث (من الواجهة). فارغ = البث على الرابط الرئيسي /
-CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "8081")
+CAMERA_STREAM_PORT = os.environ.get("CAMERA_STREAM_PORT", "80")
 _path = (os.environ.get("CAMERA_STREAM_PATH") or "").strip().strip("/")
 
 # روابط جاهزة
