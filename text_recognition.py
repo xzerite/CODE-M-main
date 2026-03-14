@@ -10,7 +10,7 @@ import struct
 import socket
 import threading
 
-from config import USE_DEVICE_CAMERA, STREAM_URL
+from config import USE_DEVICE_CAMERA, STREAM_URL, open_stream_capture
 
 # --- Audio ---
 engine = None
@@ -91,9 +91,16 @@ def main_system(source=0):
             print(f"Stream to browser failed: {e}")
             stream_sock = None
 
-    cap = cv2.VideoCapture(source)
     if isinstance(source, str):
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000"
+        print("Connecting to camera stream...")
+        cap = open_stream_capture()
+        if cap is None:
+            cap = cv2.VideoCapture(source)
+    else:
+        cap = cv2.VideoCapture(source)
+    if not cap.isOpened():
+        print("Could not open camera. Check IP and stream.")
+        return
 
     say_text("Text reader active. Please point the camera at any text.")
 
@@ -104,7 +111,7 @@ def main_system(source=0):
                 time.sleep(0.1)
                 continue
             time.sleep(1)
-            cap.open(source)
+            cap.open(STREAM_URL)
             continue
 
         height, width = frame.shape[:2]

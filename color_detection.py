@@ -4,7 +4,7 @@ import os
 import time
 import struct
 import socket
-from config import STREAM_URL, CAMERA_IP, USE_DEVICE_CAMERA
+from config import STREAM_URL, CAMERA_IP, USE_DEVICE_CAMERA, open_stream_capture
 
 # ======================================================================
 engine = None
@@ -88,11 +88,12 @@ def run_live_detection():
         cap = cv2.VideoCapture(0)
         snapshot_url = None
     else:
-        stream_url = STREAM_URL
         snapshot_url = f"http://{CAMERA_IP}/capture"
-        print(f"Connecting to stream: {stream_url}")
-        cap = cv2.VideoCapture(stream_url)
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000"
+        print("Connecting to camera stream...")
+        cap = open_stream_capture()
+        if cap is None:
+            print("Could not open stream. Check IP (e.g. 192.168.8.12), port 80, and that camera is on.")
+            return
 
     last_speak_time = 0
 
