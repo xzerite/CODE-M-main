@@ -68,7 +68,7 @@ HTML_TEMPLATE = """
             padding: 2rem;
         }
         .container {
-            max-width: 480px;
+            max-width: 720px;
             margin: 0 auto;
         }
         h1 {
@@ -170,16 +170,18 @@ HTML_TEMPLATE = """
             font-weight: 400;
         }
         .radio-label input { width: auto; }
-        #videoCard { margin-top: 1rem; }
+        #videoCard { margin-top: 1rem; width: 100%; }
         #videoCard h3 { font-size: 1rem; margin-bottom: 0.5rem; }
         .video-wrap {
             background: #000;
             border-radius: 12px;
             overflow: hidden;
             aspect-ratio: 4/3;
-            max-width: 100%;
+            width: 100%;
+            min-height: 360px;
+            max-height: 70vh;
         }
-        .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; min-height: 320px; }
         .btn-stop { background: #e74c3c; margin-top: 0.5rem; }
         .btn-stop:hover { background: #c0392b; }
         .btn-check { background: #3498db; font-size: 0.9rem; }
@@ -234,6 +236,7 @@ HTML_TEMPLATE = """
                     <input type="text" id="streamPathCustom" name="streamPathCustom" placeholder="مثلاً capture أو custom" style="max-width: 10rem; margin-top: 0.25rem; display: none;">
                     <p class="sub" style="margin-top: 0.5rem; font-size: 0.8rem;">من تطبيق البث: انسخ عنوان LAN (مثلاً <code>192.168.1.3:80</code> أو <code>192.168.1.3:8081</code>) وضع الـ IP في الحقل أعلاه والمنفذ في «منفذ البث». تأكد أن خادم البث يعمل في التطبيق (ليس «RTSP Server Closed»—فعّل بث HTTP أو Live Push إن وُجد).</p>
                     <p class="sub" style="margin-top: 0.25rem; font-size: 0.8rem;">ESP32-CAM: من Arduino انسخ عنوان البث من الشاشة التسلسلية (مثلاً :80/stream أو :81/stream). مسار البث الشائع: <code>stream</code>.</p>
+                    <p class="sub" style="margin-top: 0.25rem; font-size: 0.8rem;">لرفع الدقة والإطارات (s60sc / MJPEG2SD): ضع <code>config.txt</code> على الـ SD أو استخدم واجهة الويب على <code>http://IP_الكاميرا</code>. مثلاً: <code>framesize 11</code> (HD)، <code>streamdelay 0</code> أو أقل = إطارات أكثر.</p>
                     <label class="sub" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.85rem;">
                         <input type="checkbox" id="useMjpegHttp" name="useMjpegHttp" value="1">
                         استخدام طرق بديلة فقط (MJPEG عبر HTTP ثم التقاط صور /capture)
